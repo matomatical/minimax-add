@@ -1,14 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "minimax-lib"
-version = "0.2.0"
+name = "minimax-add"
+version = "0.3.0"
 authors = [
-  {name="Minqi Jiang"}, 
-  {email="msj@meta.com"},
+  {name="Minqi Jiang", email="msj@meta.com"},
 ]
-description = "Efficient baselines for autocurricula in JAX"
+description = "Minimax UED framework + ADD (Adversarial Diffusion Design) in JAX"
 readme = "README.md"
 license = {text = "Apache 2.0"}
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent"
@@ -23,15 +26,8 @@ dependencies = [
   "distrax>=0.1.8",
   "chex>=0.1.83",
   "wandb>=0.13",
-  "ipython>=7.34.0",
-  "GitPython>=3.1.29",
-  "tqdm>=4.66.1"
+  "tqdm>=4.66.1",
 ]
-
-[tool.hatchling.scripts]
-train = "minimax.train:main"
-evaluate = "minimax.evaluate:main"
-make_cmd = "minimax.config.make_cmd:main"
 
 [tool.setuptools.package-data]
 "minimax.config.configs" = ["**"]
