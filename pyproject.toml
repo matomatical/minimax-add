@@ -4,13 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "minimax-add"
-version = "0.3.0"
+version = "0.0.0"
 authors = [
-  {name="Minqi Jiang", email="msj@meta.com"},
+  {name="Matthew Farrugia-Roberts", email="matthew@far.in.net"},
 ]
-description = "Minimax UED framework + ADD (Adversarial Diffusion Design) in JAX"
+description = "Fork of Minimax UED framework to include ADD (Adversarial Diffusion Design)"
 readme = "README.md"
-license = {text = "Apache 2.0"}
 requires-python = ">=3.12"
 classifiers = [
     "Programming Language :: Python :: 3",

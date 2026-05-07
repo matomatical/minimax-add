@@ -1,14 +1,18 @@
-# minimax-add
+minimax-add
+-----------
 
 JAX reproduction of **Adversarial Environment Design via Regret-Guided
 Diffusion Models** (Chung et al., 2024), built on top of
 [minimax](https://github.com/facebookresearch/minimax) (Jiang et al., 2023).
 
 This is a fork of minimax that adds:
-- Modern JAX compatibility (JAX >= 0.6, distrax replacing tfp)
-- The ADD algorithm as `minimax.add`, including DDPM/DDIM diffusion,
-  an environment critic, and regret-guided level sampling for the maze domain
 
+- Modern JAX compatibility (JAX >= 0.6, distrax replacing tfp)
+
+- The ADD algorithm (`minimax.add`) including DDPM/DDIM diffusion, an
+  environment critic, and regret-guided level sampling for the maze domain
+
+The original minimax code is available under Apache 2.0 license.
 
 ## Installation
 
@@ -67,12 +71,11 @@ src/minimax/
 
 ## References
 
-- Chung, Teo, Jiang, Foerster. "Adversarial Environment Design via
-  Regret-Guided Diffusion Models." NeurIPS 2024.
-  [Paper](https://arxiv.org/abs/2410.01471) |
-  [Code (PyTorch)](https://github.com/rllab-snu/ADD)
+- Chung et al., "Adversarial Environment Design via Regret-Guided Diffusion
+  Models," NeurIPS 2024
+  [[arXiv](https://arxiv.org/abs/2410.19715)]
+  [[repo (PyTorch)](https://github.com/rllab-snu/ADD)]
 
-- Jiang, Dennis, Parker-Holder, Foerster. "minimax: Efficient Baselines for
-  Autocurricula in JAX." 2023.
-  [Paper](https://arxiv.org/abs/2311.12716) |
-  [Code](https://github.com/facebookresearch/minimax)
+- Jiang et al., "minimax: Efficient Baselines for Autocurricula in JAX," 2023
+  [[arXiv](https://arxiv.org/abs/2311.12716)]
+  [[repo](https://github.com/facebookresearch/minimax)]
