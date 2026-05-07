@@ -192,7 +192,7 @@ class CriticBuffer:
 
     def sample(self, batch_size: int, rng: np.random.Generator) -> tuple[np.ndarray, np.ndarray]:
         """Sample a random batch."""
-        idx = rng.integers(0, self.size, size=batch_size)
+        idx = rng.choice(self.size, size=batch_size, replace=False)
         return self.thetas[idx], self.targets[idx]
 
     @property

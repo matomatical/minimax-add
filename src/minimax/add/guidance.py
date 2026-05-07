@@ -31,13 +31,12 @@ def guided_ddim_sample(
     min_return: float = 0.0,
     max_return: float = 1.0,
 ) -> jnp.ndarray:
-    """Regret-guided DDIM sampling. Returns x_0 in [-1, 1].
+    """Regret-guided DDIM sampling. Returns x_0 in diffusion space.
 
-    At each DDIM step the unconditional noise prediction is adjusted by the
-    gradient of the regret function w.r.t. the noised sample, following the
-    classifier-guidance formulation from Dhariwal & Nichol (2021):
-
-        eps_guided = eps_pred - sqrt(1 - alpha_bar_t) * omega * grad_regret
+    Follows the paper's DDIM guidance flow: clamp x0 before guidance to get a
+    consistent eps baseline, apply the regret gradient, then leave the guided
+    x0 unclamped so guidance can push beyond [-1, 1]. Re-derive eps from the
+    guided x0 to maintain algebraic consistency in the DDIM step.
     """
     T = schedule.betas.shape[0]
     timesteps = _make_ddim_timesteps(T, num_steps)
@@ -56,8 +55,18 @@ def guided_ddim_sample(
         B = shape[0]
         t_batch = jnp.full((B,), t_cur, dtype=jnp.int32)
 
+        sqrt_ab_t = jnp.sqrt(ab_t)
+        sqrt_1m_ab_t = jnp.sqrt(1.0 - ab_t)
+
         # Unconditional noise prediction.
         eps_pred = diff_model_fn(diff_params, x, t_batch)
+
+        # Predict x0 from raw eps, clamp to [-1, 1].
+        x0_pred = (x - sqrt_1m_ab_t * eps_pred) / sqrt_ab_t
+        x0_pred = jnp.clip(x0_pred, -1.0, 1.0)
+
+        # Re-derive eps from clamped x0 (consistent baseline for guidance).
+        eps_clean = (x - sqrt_ab_t * x0_pred) / sqrt_1m_ab_t
 
         # Regret gradient w.r.t. x_t (critic params frozen).
         def regret_sum(x_t):
@@ -65,20 +74,20 @@ def guided_ddim_sample(
             return regret(logits, alpha, num_bins, min_return, max_return).sum()
 
         grad_regret = jax.grad(regret_sum)(x)
-        grad_regret = jnp.clip(grad_regret, -1.0, 1.0)
 
-        # Classifier-guidance: shift eps by the regret gradient.
-        sqrt_1m_ab_t = jnp.sqrt(1.0 - ab_t)
-        eps_guided = eps_pred - sqrt_1m_ab_t * omega * grad_regret
+        # Classifier-guidance: shift cleaned eps by the regret gradient.
+        eps_guided = eps_clean - sqrt_1m_ab_t * omega * grad_regret
 
-        # Predict x_0 from guided eps.
-        x0_pred = (x - sqrt_1m_ab_t * eps_guided) / jnp.sqrt(ab_t)
-        x0_pred = jnp.clip(x0_pred, -1.0, 1.0)
+        # Predict guided x0 (NOT clamped — guidance may push beyond [-1, 1]).
+        x0_guided = (x - sqrt_1m_ab_t * eps_guided) / sqrt_ab_t
+
+        # Re-derive eps from guided x0 for algebraic consistency.
+        eps_final = (x - sqrt_ab_t * x0_guided) / sqrt_1m_ab_t
 
         # DDIM deterministic update (eta=0).
         x_prev = (
-            jnp.sqrt(ab_prev) * x0_pred
-            + jnp.sqrt(1.0 - ab_prev) * eps_guided
+            jnp.sqrt(ab_prev) * x0_guided
+            + jnp.sqrt(1.0 - ab_prev) * eps_final
         )
         return x_prev
 
