@@ -148,6 +148,12 @@ def main():
     rng = jax.random.PRNGKey(args.seed)
     runner_state = runner.reset(rng)
 
+    if args.runner == "add":
+        rng, critic_rng = jax.random.split(rng)
+        critic_params = runner.init_critic_params(critic_rng)
+    else:
+        critic_params = None
+
     t0 = time.time()
     tick = 0
     train_steps = 0
@@ -155,7 +161,10 @@ def main():
     while tick < args.n_updates:
         evaluate = (tick + 1) % args.eval_every == 0
 
-        stats, *runner_state = runner.run(*runner_state)
+        if critic_params is not None:
+            stats, *runner_state = runner.run(*runner_state, critic_params, 0.0)
+        else:
+            stats, *runner_state = runner.run(*runner_state)
 
         train_steps += steps_per_update
         tick += 1
