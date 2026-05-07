@@ -116,7 +116,7 @@ class GridWorldBasicModel(nn.Module):
 			),
 			nn.Dense(
 				self.output_dim, 
-				kernel_init=nn.initializers.constant(0.01), 
+				kernel_init=common.init_orth(scale=0.01),
 				name=f'fc_pi_final'
 			)
 		])
