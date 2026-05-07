@@ -135,7 +135,7 @@ class DRRunner:
 		rng, subrng = jax.random.split(rng)
 		if self.student_pop.agent.is_recurrent:
 			carry = self.student_pop.init_carry(subrng, obs)
-			self.zero_carry = jax.tree_map(lambda x: x.at[:,:self.n_parallel].get(), carry)
+			self.zero_carry = jax.tree.map(lambda x: x.at[:,:self.n_parallel].get(), carry)
 		else:
 			carry = None
 
@@ -326,7 +326,7 @@ class DRRunner:
 
 	@partial(jax.jit, static_argnums=(0,4))
 	def _compile_stats(self, update_stats, ep_stats, env_metrics=None, mask_passable=True):
-		stats = jax.vmap(lambda info: jax.tree_map(lambda x: x.mean(), info))(
+		stats = jax.vmap(lambda info: jax.tree.map(lambda x: x.mean(), info))(
 			{k:ep_stats[k] for k in self.rolling_stats.names}
 		)
 		stats.update(update_stats)
@@ -358,10 +358,10 @@ class DRRunner:
 			stats.update(mean_env_metrics)
 
 		if self.n_students == 1:
-			stats = jax.tree_map(lambda x: x[0], stats)
+			stats = jax.tree.map(lambda x: x[0], stats)
 
 		if self.n_devices > 1:
-			stats = jax.tree_map(lambda x: jax.lax.pmean(x, 'device'), stats)
+			stats = jax.tree.map(lambda x: jax.lax.pmean(x, 'device'), stats)
 
 		return stats
 

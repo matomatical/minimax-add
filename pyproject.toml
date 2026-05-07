@@ -14,13 +14,13 @@ classifiers = [
     "Operating System :: OS Independent"
 ]
 dependencies = [
-  "numpy>=1.25,<1.26",
-  "pandas==1.5.3",
+  "numpy>=1.25",
+  "pandas>=1.5.3",
   "jax>=0.4.31",
   "jaxlib>=0.4.31",
   "flax>=0.7.4",
   "optax>=0.1.7",
-  "tensorflow_probability==0.23.0",
+  "distrax>=0.1.8",
   "chex>=0.1.83",
   "wandb>=0.13",
   "ipython>=7.34.0",

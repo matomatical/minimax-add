@@ -16,7 +16,7 @@ import jax.numpy as jnp
 import flax
 import optax
 from flax.training.train_state import TrainState
-from tensorflow_probability.substrates import jax as tfp
+import distrax
 
 from .agent import Agent
 
@@ -92,7 +92,7 @@ class PPOAgent(Agent):
 			carry
 
 	def get_action_dist(self, dist_params, dtype=jnp.uint32):
-		return tfp.distributions.Categorical(logits=dist_params, dtype=dtype)
+		return distrax.Categorical(logits=dist_params, dtype=dtype)
 
 	@partial(jax.jit, static_argnums=(0,))
 	def update(self, rng, train_state, batch):
@@ -155,8 +155,8 @@ class PPOAgent(Agent):
 			loss_info = loss_info + (optax.global_norm(grads),)
 
 			if self.n_devices > 1:
-				loss_info = jax.tree_map(lambda x: jax.lax.pmean(x, 'device'), loss_info)
-				grads = jax.tree_map(lambda x: jax.lax.pmean(x, 'device'), grads)
+				loss_info = jax.tree.map(lambda x: jax.lax.pmean(x, 'device'), loss_info)
+				grads = jax.tree.map(lambda x: jax.lax.pmean(x, 'device'), grads)
 
 			train_state = train_state.apply_gradients(grads=grads)
 

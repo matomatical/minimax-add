@@ -69,7 +69,7 @@ class BatchEnv:
 	@partial(jax.jit, static_argnums=(0,))
 	def _set_state(self, state):
 		# Need to repeat the state
-		state = jax.tree_map(lambda x: x.repeat(self.n_eval, axis=0), state)
+		state = jax.tree.map(lambda x: x.repeat(self.n_eval, axis=0), state)
 
 		return jax.vmap(self.env.set_state)(state)
 

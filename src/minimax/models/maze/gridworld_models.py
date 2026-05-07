@@ -13,7 +13,6 @@ import jax
 import jax.numpy as jnp
 import flax.linen as nn
 import chex
-from tensorflow_probability.substrates import jax as tfp
 
 from minimax.models import common
 from minimax.models import s5

@@ -28,15 +28,15 @@ class AgentPop:
 		self.n_agents = n_agents
 
 	def _reshape_to_pop(self, x):
-		return jax.tree_map(
+		return jax.tree.map(
 			lambda x: jnp.reshape(x, newshape=(self.n_agents, x.shape[0]//self.n_agents, *x.shape[1:])), x)
 
 	def _flatten(self, x):
-		return jax.tree_map(lambda x: jnp.reshape(x, newshape=(self.n_agents*x.shape[1], -1)).squeeze(), x)
+		return jax.tree.map(lambda x: jnp.reshape(x, newshape=(self.n_agents*x.shape[1], -1)).squeeze(), x)
 
 	def init_params(self, rng, obs):
 		if self.agent.is_recurrent:
-			obs = jax.tree_map(lambda x: x[jnp.newaxis,:], obs) # Make time first dim
+			obs = jax.tree.map(lambda x: x[jnp.newaxis,:], obs) # Make time first dim
 
 		vrngs = jax.random.split(rng, self.n_agents)
 		return jax.vmap(
@@ -53,7 +53,7 @@ class AgentPop:
 	def act(self, params, obs, carry, reset=None):
 		# If recurrent, add time axis to support scanned rollouts
 		if self.agent.is_recurrent:
-			obs = jax.tree_map(lambda x: x[:,jnp.newaxis,:], obs) # Add time dim after agent dim
+			obs = jax.tree.map(lambda x: x[:,jnp.newaxis,:], obs) # Add time dim after agent dim
 
 			if reset is None:
 				agent_batch_dim = jax.tree_util.tree_leaves(obs)[0].shape[2]
@@ -65,7 +65,7 @@ class AgentPop:
 
 		if self.agent.is_recurrent: # Remove time dim
 			value = value.squeeze(1)
-			pi_params =  jax.tree_map(lambda x: x.squeeze(1), pi_params) 
+			pi_params =  jax.tree.map(lambda x: x.squeeze(1), pi_params) 
 
 		return value, pi_params, next_carry
 

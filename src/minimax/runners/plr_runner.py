@@ -124,7 +124,7 @@ class PLRRunner(DRRunner):
 		if self.n_devices == 1:
 			runner_state[1] = train_state
 		else:
-			plr_buffer = jax.tree_map(lambda x: x.repeat(self.n_devices, 1), plr_buffer) # replicate plr buffer
+			plr_buffer = jax.tree.map(lambda x: x.repeat(self.n_devices, 1), plr_buffer) # replicate plr buffer
 			runner_state += (plr_buffer,) # Return PLR buffer directly to make shmap easier
 
 		self.dummy_eval_output = self._create_dummy_eval_output(train_state)
@@ -251,7 +251,7 @@ class PLRRunner(DRRunner):
 			parent_idxs=parent_idxs)
 
 		next_plr_buffer = jax.vmap(
-			lambda update, new, prev: jax.tree_map(
+			lambda update, new, prev: jax.tree.map(
 				lambda x, y: jax.lax.select(update, x, y), new, prev)
 		)(update_plr, next_plr_buffer, train_state.plr_buffer)
 
@@ -280,7 +280,7 @@ class PLRRunner(DRRunner):
 			subsample_idxs = subsample_idxs.repeat(self.n_parallel//self.mutation_subsample_size, -1)
 			parent_idxs = level_idxs.take(subsample_idxs)
 			levels = jax.vmap(
-				lambda x, y: jax.tree_map(lambda _x: jnp.array(_x).take(y, 0), x)
+				lambda x, y: jax.tree.map(lambda _x: jnp.array(_x).take(y, 0), x)
 			)(levels, parent_idxs)
 			
 			return levels, parent_idxs
@@ -326,7 +326,7 @@ class PLRRunner(DRRunner):
 			_, dummy_stats = jax.vmap(lambda *_: self.student_pop.agent.get_empty_update_stats())(np.arange(self.n_students))
 			_train_state, stats = self.student.update(rng, train_state, train_batch)
 			train_state, stats = jax.vmap(lambda cond,x,y: \
-					jax.tree_map(lambda _cond,_x,_y: jax.lax.select(_cond,_x,_y), cond, x, y))(
+					jax.tree.map(lambda _cond,_x,_y: jax.lax.select(_cond,_x,_y), cond, x, y))(
 						is_replay, (train_state, stats), (_train_state, dummy_stats)
 					)
 
@@ -408,7 +408,7 @@ class PLRRunner(DRRunner):
 
 		if self.use_parallel_eval:
 			n_level_samples = self.n_parallel//self._n_parallel_batches
-			new_levels = jax.tree_map(lambda x: x.at[:,n_level_samples:2*n_level_samples].get(), state)
+			new_levels = jax.tree.map(lambda x: x.at[:,n_level_samples:2*n_level_samples].get(), state)
 		else:
 			n_level_samples = self.n_parallel
 			new_levels = state
@@ -435,21 +435,21 @@ class PLRRunner(DRRunner):
 				rng, subrng = jax.random.split(rng)
 				mutated_levels, mutated_level_idxs, _parent_idxs = self._mutate_levels(subrng, levels, level_idxs)
 				
-				fallback_levels = jax.tree_map(lambda x: x.at[:,-n_level_samples:].get(), state)
+				fallback_levels = jax.tree.map(lambda x: x.at[:,-n_level_samples:].get(), state)
 				fallback_level_idxs = jnp.full_like(mutated_level_idxs, -1)
 
 				mutated_levels = jax.vmap(
-					lambda cond,x,y: jax.tree_map(
+					lambda cond,x,y: jax.tree.map(
 						lambda _x,_y: jax.lax.select(cond,_x,_y), x, y
 					))(is_replay, mutated_levels, fallback_levels)
 
 				mutated_level_idxs = jax.vmap(
-					lambda cond,x,y: jax.tree_map(
+					lambda cond,x,y: jax.tree.map(
 						lambda _x,_y: jax.lax.select(cond,_x,_y), x, y
 					))(is_replay, mutated_level_idxs, fallback_level_idxs)
 
 				_parent_idxs = jax.vmap(
-					lambda cond,x,y: jax.tree_map(
+					lambda cond,x,y: jax.tree.map(
 						lambda _x,_y: jax.lax.select(cond,_x,_y), x, y
 					))(is_replay, _parent_idxs, fallback_level_idxs)
 		
@@ -483,7 +483,7 @@ class PLRRunner(DRRunner):
 			replay_start_idx = self.n_eval*n_level_samples
 			replay_end_idx = 2*replay_start_idx
 			train_batch = jax.vmap(
-				lambda x: jax.tree_map(
+				lambda x: jax.tree.map(
 					lambda _x: _x.at[:,replay_start_idx:replay_end_idx].get(), x)
 				)(train_batch)
 

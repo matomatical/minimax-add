@@ -163,7 +163,7 @@ class ScannedRNN(nn.Module):
 		x, reset = step
 		rnn_state = carry
 
-		rnn_state = jax.tree_map(
+		rnn_state = jax.tree.map(
 			lambda x,y: jax.vmap(jax.lax.select)(reset, x, y), 
 			ScannedRNN.initialize_carry(
 				jax.random.PRNGKey(0), (x.shape[0],), self.recurrent_hidden_dim, self.recurrent_arch),	

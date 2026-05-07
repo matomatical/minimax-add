@@ -34,4 +34,4 @@ def pytree_transform(pytree, transform):
 	return jax.tree_util.tree_map(lambda x: transform(x), pytree)
 
 def pytree_merge(dst, src, start_idx, src_len):
-	return jax.tree_map(lambda x,y: x.at[start_idx:start_idx+src_len].set(y.at[:src_len].get()), dst, src)
+	return jax.tree.map(lambda x,y: x.at[start_idx:start_idx+src_len].set(y.at[:src_len].get()), dst, src)
