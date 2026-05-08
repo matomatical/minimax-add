@@ -78,9 +78,11 @@ class ADDRunner(DRRunner):
         ddim_steps: int = 50,
         alpha: float = 0.15,
         unet_kwargs: dict | None = None,
+        same_level_replay: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.same_level_replay = same_level_replay
 
         self.diff_model = UNet(**(unet_kwargs or {}))
         self.critic_model = EnvCritic()
@@ -174,10 +176,7 @@ class ADDRunner(DRRunner):
         rollout_start_state = state
 
         done = jnp.zeros(rollout_batch_shape, dtype=jnp.bool_)
-        # Reset to the SAME diffusion-sampled level on episode end (not random).
-        # This matches the ADD paper where agents replay the same level throughout
-        # the rollout, giving the critic multiple returns per level.
-        reset_state = state
+        reset_state = state if self.same_level_replay else None
 
         rng, subrng = jax.random.split(rng)
         rollout, state, start_state, obs, carry, extra, ep_stats, train_state = (
