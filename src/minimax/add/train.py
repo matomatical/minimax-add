@@ -74,6 +74,10 @@ def main():
     parser.add_argument("--ddim_steps", type=int, default=50)
     parser.add_argument("--omega", type=float, default=5.0)
     parser.add_argument("--alpha", type=float, default=0.15)
+    parser.add_argument("--unet_attn_res", type=int, nargs="+", default=None,
+                        help="Override UNet attention_resolutions (e.g. 4 2 for v1)")
+    parser.add_argument("--unet_no_scale_shift", action="store_true",
+                        help="Disable FiLM (use_scale_shift_norm=False, for v1/v2 ckpts)")
 
     parser.add_argument("--n_parallel", type=int, default=32)
     parser.add_argument("--rollout_steps", type=int, default=256)
@@ -127,10 +131,17 @@ def main():
     )
 
     # --- ADD runner (handles diffusion sampling + RL rollouts) ---
+    unet_kwargs = {}
+    if args.unet_attn_res is not None:
+        unet_kwargs["attention_resolutions"] = tuple(args.unet_attn_res)
+    if args.unet_no_scale_shift:
+        unet_kwargs["use_scale_shift_norm"] = False
+
     runner = ADDRunner(
         diffusion_ckpt_path=args.diffusion_ckpt,
         ddim_steps=args.ddim_steps,
         alpha=args.alpha,
+        unet_kwargs=unet_kwargs or None,
         env_name="Maze",
         env_kwargs=env_kwargs,
         student_agents=[student_agent],

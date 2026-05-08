@@ -77,11 +77,12 @@ class ADDRunner(DRRunner):
         diffusion_ckpt_path: str,
         ddim_steps: int = 50,
         alpha: float = 0.15,
+        unet_kwargs: dict | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
-        self.diff_model = UNet()
+        self.diff_model = UNet(**(unet_kwargs or {}))
         self.critic_model = EnvCritic()
         self.schedule = make_schedule()
         self.ddim_steps = ddim_steps
