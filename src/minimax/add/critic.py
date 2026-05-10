@@ -34,6 +34,107 @@ def returns_to_categorical(
     return target
 
 
+def _return_to_two_hot(
+    ret: jnp.ndarray,
+    num_bins: int = 100,
+    min_return: float = 0.0,
+    max_return: float = 1.0,
+) -> jnp.ndarray:
+    """Two-hot encode a single scalar return. () -> (num_bins,)."""
+    bin_width = (max_return - min_return) / num_bins
+    ret = jnp.clip(ret, min_return, max_return - 1e-8)
+    bin_idx = jnp.floor((ret - min_return) / bin_width).astype(jnp.int32)
+    bin_idx = jnp.clip(bin_idx, 0, num_bins - 2)
+    remainder = (ret - min_return - bin_idx * bin_width) / bin_width
+    remainder = jnp.clip(remainder, 0.0, 1.0)
+    target = jnp.zeros(num_bins)
+    target = target.at[bin_idx].add(1.0 - remainder)
+    target = target.at[bin_idx + 1].add(remainder)
+    return target
+
+
+def rollout_to_target(
+    rewards: jnp.ndarray,
+    dones: jnp.ndarray,
+    num_bins: int = 100,
+    min_return: float = 0.0,
+    max_return: float = 1.0,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Build a distributional critic target from one worker's rollout.
+
+    Scans through timesteps accumulating undiscounted reward. On each
+    episode completion (done=True), two-hot encodes the episode return and
+    adds it to a running distribution. The final distribution is normalised
+    by the episode count, giving an equal-weight mixture over all completed
+    episodes.
+
+    Args:
+        rewards: (n_steps,)
+        dones:   (n_steps,) uint8
+
+    Returns:
+        target:      (num_bins,) distributional target (sums to 1, or all
+                     zeros if no episodes completed)
+        n_episodes:  () int32, number of completed episodes
+        total_return: () float32, sum of all episode returns
+    """
+    def scan_fn(carry, step):
+        cumulative, target_accum, ep_count, total_ret = carry
+        reward, done = step
+
+        cumulative = cumulative + reward
+        done_bool = done.astype(jnp.bool_)
+
+        two_hot = _return_to_two_hot(
+            cumulative, num_bins, min_return, max_return,
+        )
+        target_accum = jnp.where(done_bool, target_accum + two_hot, target_accum)
+        ep_count = ep_count + done_bool.astype(jnp.int32)
+        total_ret = jnp.where(done_bool, total_ret + cumulative, total_ret)
+        cumulative = jnp.where(done_bool, 0.0, cumulative)
+
+        return (cumulative, target_accum, ep_count, total_ret), None
+
+    init = (
+        jnp.float32(0.0),
+        jnp.zeros(num_bins),
+        jnp.int32(0),
+        jnp.float32(0.0),
+    )
+    (_, target_accum, n_episodes, total_return), _ = jax.lax.scan(
+        scan_fn, init, (rewards, dones),
+    )
+    target = target_accum / jnp.maximum(n_episodes, 1)
+    return target, n_episodes, total_return
+
+
+def batch_rollout_to_targets(
+    rewards: jnp.ndarray,
+    dones: jnp.ndarray,
+    num_bins: int = 100,
+    min_return: float = 0.0,
+    max_return: float = 1.0,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Build distributional critic targets for all workers via vmap.
+
+    Args:
+        rewards: (n_steps, n_workers)
+        dones:   (n_steps, n_workers) uint8
+
+    Returns:
+        targets:     (n_workers, num_bins)
+        n_episodes:  (n_workers,)
+        mean_return: () scalar mean return across all episodes and workers
+    """
+    targets, n_episodes, total_returns = jax.vmap(
+        lambda r, d: rollout_to_target(r, d, num_bins, min_return, max_return),
+        in_axes=(1, 1),
+    )(rewards, dones)
+
+    mean_return = total_returns.sum() / jnp.maximum(n_episodes.sum(), 1)
+    return targets, n_episodes, mean_return
+
+
 def categorical_mean(
     logits: jnp.ndarray,
     num_bins: int = 100,

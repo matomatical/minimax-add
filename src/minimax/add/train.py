@@ -29,7 +29,7 @@ from minimax.add.theta import decode_level
 from minimax.add.diffusion import make_schedule
 import minimax.util.graph as graph_util
 from minimax.add.critic import (
-    CriticBuffer, returns_to_categorical, make_critic_train_step, train_critic,
+    CriticBuffer, make_critic_train_step, train_critic,
 )
 
 
@@ -98,9 +98,6 @@ def main():
     parser.add_argument("--critic_batch_size", type=int, default=128)
     parser.add_argument("--same_level_replay", action="store_true",
                         help="Enable same-level replay (unstable, see critic_ablation)")
-    parser.add_argument("--distributional_target", action="store_true",
-                        help="Multi-episode distributional targets (unstable, see critic_ablation)")
-
     parser.add_argument("--n_updates", type=int, default=30000)
     parser.add_argument("--log_every", type=int, default=10)
     parser.add_argument("--eval_every", type=int, default=100)
@@ -118,7 +115,7 @@ def main():
     print(f"JAX devices: {jax.devices()}")
     print(f"Full ADD | {total_steps:,} total env steps | omega={args.omega}")
     print(f"  replay={'ON' if args.same_level_replay else 'OFF'}"
-          f" | targets={'distributional' if args.distributional_target else 'single'}"
+          f" | targets=distributional"
           f" | critic_lr={args.critic_lr}"
           f" | wd={args.critic_weight_decay}"
           f" | grad_clip={args.critic_grad_clip}")
@@ -226,32 +223,10 @@ def main():
         train_steps += steps_per_update
         tick += 1
 
-        # Collect returns and build critic targets.
-        ep_returns = np.array(jax.device_get(stats["_ep_returns"]))  # (n_parallel, M)
-        n_episodes = np.array(jax.device_get(stats["_n_episodes"]))  # (n_parallel,)
-        thetas_np = np.array(jax.device_get(stats["_thetas"]))
-
-        if not args.distributional_target:
-            per_level_returns = ep_returns[:, 0]
-            mean_return = float(per_level_returns.mean())
-            targets_np = np.array(returns_to_categorical(jnp.array(per_level_returns)))
-        else:
-            num_bins = 100
-            bin_width = 1.0 / num_bins
-            targets_np = np.zeros((args.n_parallel, num_bins), dtype=np.float32)
-            total_return = 0.0
-            for i in range(args.n_parallel):
-                n_ep = max(int(n_episodes[i]), 1)
-                prob_per_ep = 1.0 / n_ep
-                for j in range(n_ep):
-                    ret = float(np.clip(ep_returns[i, j], 0.0, 1.0 - 1e-8))
-                    total_return += ret
-                    idx = int(ret / bin_width)
-                    idx = min(idx, num_bins - 2)
-                    remainder = (ret - idx * bin_width) / bin_width
-                    targets_np[i, idx] += prob_per_ep * (1.0 - remainder)
-                    targets_np[i, idx + 1] += prob_per_ep * remainder
-            mean_return = total_return / max(int(n_episodes.sum()), 1)
+        # Collect targets (computed inside JIT'd runner via batch_rollout_to_targets).
+        targets_np = np.array(jax.device_get(stats["_targets"]))      # (n_parallel, 100)
+        thetas_np = np.array(jax.device_get(stats["_thetas"]))        # (n_parallel, 16, 16, 3)
+        mean_return = float(jax.device_get(stats["_mean_return"]))
 
         if not np.any(np.isnan(thetas_np)):
             critic_buffer.add(thetas_np, targets_np)

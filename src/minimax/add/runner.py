@@ -18,56 +18,7 @@ from minimax.add.theta import decode_level
 from minimax.add.unet import UNet
 from minimax.add.diffusion import make_schedule
 from minimax.add.guidance import guided_ddim_sample_theta
-from minimax.add.critic import EnvCritic
-
-
-MAX_EPISODES_PER_ROLLOUT = 8
-
-
-def _per_level_episode_returns(rewards, dones):
-    """Collect all episode returns per worker during a same-level rollout.
-
-    With same-level replay, each worker replays the same level and may complete
-    multiple episodes. We collect up to MAX_EPISODES_PER_ROLLOUT returns per
-    worker in a fixed-size array (padded with -1 for unused slots).
-
-    Args:
-        rewards: (n_steps, n_workers)
-        dones: (n_steps, n_workers) uint8
-
-    Returns:
-        returns: (n_workers, MAX_EPISODES_PER_ROLLOUT) episode returns, -1 for unused slots
-        n_episodes: (n_workers,) number of completed episodes per worker
-    """
-    n_workers = rewards.shape[1]
-    M = MAX_EPISODES_PER_ROLLOUT
-
-    def scan_fn(carry, step):
-        cumulative, ep_returns, ep_count = carry
-        reward, done = step
-        done_bool = done.astype(jnp.bool_)
-
-        cumulative = cumulative + reward
-
-        # On done: store the return and reset accumulator
-        slot = jnp.minimum(ep_count, M - 1)
-        ep_returns = jnp.where(
-            done_bool[:, None] & (jnp.arange(M)[None, :] == slot[:, None]),
-            cumulative[:, None],
-            ep_returns,
-        )
-        ep_count = ep_count + done_bool.astype(jnp.int32)
-        cumulative = jnp.where(done_bool, 0.0, cumulative)
-
-        return (cumulative, ep_returns, ep_count), None
-
-    init = (
-        jnp.zeros(n_workers),
-        jnp.full((n_workers, M), -1.0),
-        jnp.zeros(n_workers, dtype=jnp.int32),
-    )
-    (_, ep_returns, ep_count), _ = jax.lax.scan(scan_fn, init, (rewards, dones))
-    return ep_returns, jnp.minimum(ep_count, M)
+from minimax.add.critic import EnvCritic, batch_rollout_to_targets
 
 
 class ADDRunner(DRRunner):
@@ -214,11 +165,12 @@ class ADDRunner(DRRunner):
         stats = self._compile_stats(update_stats, ep_stats, env_metrics)
         stats.update(dict(n_updates=train_state.n_updates[0]))
         stats["_thetas"] = all_thetas[0]
-        ep_returns, n_episodes = _per_level_episode_returns(
+        targets, n_episodes, mean_return = batch_rollout_to_targets(
             rollout["rewards"][0], rollout["dones"][0]
         )
-        stats["_ep_returns"] = ep_returns
+        stats["_targets"] = targets
         stats["_n_episodes"] = n_episodes
+        stats["_mean_return"] = mean_return
 
         train_state = train_state.increment()
         self.n_updates += 1
