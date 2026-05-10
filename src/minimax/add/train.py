@@ -96,8 +96,6 @@ def main():
     parser.add_argument("--critic_buffer_size", type=int, default=1600)
     parser.add_argument("--critic_train_iters", type=int, default=5)
     parser.add_argument("--critic_batch_size", type=int, default=128)
-    parser.add_argument("--same_level_replay", action="store_true",
-                        help="Enable same-level replay (unstable, see critic_ablation)")
     parser.add_argument("--n_updates", type=int, default=30000)
     parser.add_argument("--log_every", type=int, default=10)
     parser.add_argument("--eval_every", type=int, default=100)
@@ -114,8 +112,7 @@ def main():
     total_steps = args.n_updates * steps_per_update
     print(f"JAX devices: {jax.devices()}")
     print(f"Full ADD | {total_steps:,} total env steps | omega={args.omega}")
-    print(f"  replay={'ON' if args.same_level_replay else 'OFF'}"
-          f" | targets=distributional"
+    print(f"  replay=ON | targets=distributional"
           f" | critic_lr={args.critic_lr}"
           f" | wd={args.critic_weight_decay}"
           f" | grad_clip={args.critic_grad_clip}")
@@ -151,7 +148,6 @@ def main():
         ddim_steps=args.ddim_steps,
         alpha=args.alpha,
         unet_kwargs=unet_kwargs or None,
-        same_level_replay=args.same_level_replay,
         env_name="Maze",
         env_kwargs=env_kwargs,
         student_agents=[student_agent],

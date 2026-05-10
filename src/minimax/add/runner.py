@@ -29,11 +29,9 @@ class ADDRunner(DRRunner):
         ddim_steps: int = 50,
         alpha: float = 0.15,
         unet_kwargs: dict | None = None,
-        same_level_replay: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.same_level_replay = same_level_replay
 
         self.diff_model = UNet(**(unet_kwargs or {}))
         self.critic_model = EnvCritic()
@@ -127,7 +125,7 @@ class ADDRunner(DRRunner):
         rollout_start_state = state
 
         done = jnp.zeros(rollout_batch_shape, dtype=jnp.bool_)
-        reset_state = state if self.same_level_replay else None
+        reset_state = state
 
         rng, subrng = jax.random.split(rng)
         rollout, state, start_state, obs, carry, extra, ep_stats, train_state = (
