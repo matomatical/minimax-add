@@ -87,9 +87,18 @@ def make_runner(args):
     )
 
     if args.runner == "add":
+        unet_kwargs = {}
+        if args.unet_attn_res is not None:
+            unet_kwargs["attention_resolutions"] = tuple(args.unet_attn_res)
+        if args.unet_no_scale_shift:
+            unet_kwargs["use_scale_shift_norm"] = False
+        if args.unet_num_heads is not None:
+            unet_kwargs["num_heads"] = args.unet_num_heads
+
         runner = ADDRunner(
             diffusion_ckpt_path=args.diffusion_ckpt,
             ddim_steps=args.ddim_steps,
+            unet_kwargs=unet_kwargs or None,
             **runner_kwargs,
         )
     elif args.runner == "dr":
@@ -112,6 +121,15 @@ def main():
     parser.add_argument("--runner", type=str, default="add", choices=["add", "dr"])
     parser.add_argument("--diffusion_ckpt", type=str, default="checkpoints/diffusion/final.pkl")
     parser.add_argument("--ddim_steps", type=int, default=50)
+    parser.add_argument("--unet_attn_res", type=int, nargs="+", default=None,
+                        help="Override UNet attention_resolutions (e.g. 4 2 for v1).")
+    parser.add_argument("--unet_no_scale_shift", action="store_true",
+                        help="Disable FiLM (use_scale_shift_norm=False, for v1/v2 ckpts).")
+    parser.add_argument("--unet_num_heads", type=int, default=None,
+                        help="Fix UNet attention head count to a constant "
+                             "(matches PyTorch reference, =4 for v4+). "
+                             "Default None preserves legacy max(1, channels // 64) "
+                             "needed by v1/v2/v3 checkpoints.")
 
     parser.add_argument("--n_walls", type=int, default=25)
     parser.add_argument("--n_parallel", type=int, default=32)

@@ -1,7 +1,7 @@
 """UNet denoising model for DDPM on 16x16x3 maze level images."""
 
 import math
-from typing import Sequence
+from typing import Optional, Sequence
 
 import jax
 import jax.numpy as jnp
@@ -215,6 +215,7 @@ class UNet(nn.Module):
     dropout_rate: float = 0.0
     use_scale_shift_norm: bool = True
     out_channels: int = 3
+    num_heads: Optional[int] = None  # None = legacy max(1, channels // 64); int = fixed (matches PyTorch reference)
 
     @nn.compact
     def __call__(
@@ -242,6 +243,8 @@ class UNet(nn.Module):
             return spatial_size in self.attention_resolutions
 
         def num_heads(channels: int) -> int:
+            if self.num_heads is not None:
+                return self.num_heads
             return max(1, channels // 64)
 
         def res_block(ch_out):

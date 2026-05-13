@@ -1,8 +1,11 @@
 """Stage 1: Train DDPM on procedurally generated maze levels.
 
-Usage:
-    tpu-device 0 python -m minimax.add.train_diffusion
-    tpu-device 0 python -m minimax.add.train_diffusion --total_steps 1000 --log_every 50
+Runs on whatever devices are visible to JAX (`jax.local_device_count()`):
+  - `tpu-device 0 python -m minimax.add.train_diffusion`        → single-chip
+  - `tpu-device 0,1,2,3 python -m minimax.add.train_diffusion`  → 4-chip pmap
+
+`--batch_size` is the *effective* (global) batch; per-device batch is
+`batch_size // n_devices`. Must divide evenly.
 """
 
 import argparse
@@ -10,11 +13,13 @@ import os
 import time
 import pickle
 from collections import deque
+from functools import partial
 
 import numpy as np
 import jax
 import jax.numpy as jnp
 import optax
+from flax import jax_utils
 from flax.training import train_state
 
 from minimax.add.theta import sample_random_theta, decode_level
@@ -39,27 +44,34 @@ def has_path_bfs(wall_map_np, start, goal):
     return False
 
 
-def save_checkpoint(path, state, ema_params, step):
+def save_checkpoint(path, state, ema_params, step, unet_kwargs):
+    """Unreplicate-then-pickle. `state` and `ema_params` are device-replicated."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    state_host = jax_utils.unreplicate(state)
+    ema_host = jax_utils.unreplicate(ema_params)
     data = {
-        "params": jax.device_get(state.params),
-        "ema_params": jax.device_get(ema_params),
-        "opt_state": jax.device_get(state.opt_state),
+        "params": jax.device_get(state_host.params),
+        "ema_params": jax.device_get(ema_host),
+        "opt_state": jax.device_get(state_host.opt_state),
         "step": step,
+        "unet_kwargs": unet_kwargs,
     }
     with open(path, "wb") as f:
         pickle.dump(data, f)
 
 
 def load_checkpoint(path, state):
+    """Load single-device state and replicate across visible devices."""
     with open(path, "rb") as f:
         data = pickle.load(f)
-    state = state.replace(
+    state_host = state.replace(
         params=jax.device_put(data["params"]),
         opt_state=jax.device_put(data["opt_state"]),
         step=data["step"],
     )
-    ema_params = jax.device_put(data["ema_params"])
+    ema_host = jax.device_put(data["ema_params"])
+    state = jax_utils.replicate(state_host)
+    ema_params = jax_utils.replicate(ema_host)
     return state, ema_params, data["step"]
 
 
@@ -78,12 +90,27 @@ def main():
     parser.add_argument("--ckpt_dir", type=str, default="checkpoints/diffusion")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--resume", type=str, default="")
+    parser.add_argument("--num_heads", type=int, default=None,
+                        help="Fix UNet attention head count (matches PyTorch reference, =4). "
+                             "Default None preserves legacy max(1, channels // 64).")
     args = parser.parse_args()
 
-    print(f"JAX devices: {jax.devices()}")
+    n_devices = jax.local_device_count()
+    if args.batch_size % n_devices != 0:
+        raise ValueError(
+            f"batch_size {args.batch_size} must divide n_devices {n_devices}"
+        )
+    per_device_batch = args.batch_size // n_devices
+
+    print(f"JAX devices: {jax.devices()} (n={n_devices}, per_device_batch={per_device_batch})")
     rng = jax.random.PRNGKey(args.seed)
     schedule = make_schedule()
-    model = UNet()
+
+    unet_kwargs = {}
+    if args.num_heads is not None:
+        unet_kwargs["num_heads"] = args.num_heads
+    print(f"UNet kwargs (non-default): {unet_kwargs}")
+    model = UNet(**unet_kwargs)
 
     rng, init_rng = jax.random.split(rng)
     params = model.init(init_rng, jnp.ones((1, 16, 16, 3)), jnp.array([0]))
@@ -97,27 +124,35 @@ def main():
     ema_params = state.params
     start_step = 0
 
+    # Replicate state and EMA params across devices.
+    state = jax_utils.replicate(state)
+    ema_params = jax_utils.replicate(ema_params)
+
     if args.resume:
-        state, ema_params, start_step = load_checkpoint(args.resume, state)
+        # load_checkpoint returns already-replicated state/EMA.
+        state, ema_params, start_step = load_checkpoint(args.resume, jax_utils.unreplicate(state))
         print(f"Resumed from step {start_step}")
 
-    # --- JIT-compiled functions (close over model, schedule, config) ---
+    # --- Pmapped training functions (close over model, schedule, config) ---
 
-    @jax.jit
+    @partial(jax.pmap, axis_name="device")
     def train_step(state, batch, rng):
         def loss_fn(params):
             return compute_loss(model.apply, params, batch, rng, schedule)
         loss, grads = jax.value_and_grad(loss_fn)(state.params)
+        grads = jax.lax.pmean(grads, axis_name="device")
+        loss = jax.lax.pmean(loss, axis_name="device")
         state = state.apply_gradients(grads=grads)
         return state, loss
 
-    @jax.jit
+    @jax.pmap
     def gen_batch(rng):
-        return jax.vmap(sample_random_theta)(jax.random.split(rng, args.batch_size))
+        # rng shape (n_devices, 2). Per-device: split → vmap.
+        return jax.vmap(sample_random_theta)(jax.random.split(rng, per_device_batch))
 
     ema_rate = args.ema_rate
 
-    @jax.jit
+    @jax.pmap
     def update_ema(ema, new):
         return jax.tree.map(lambda e, n: ema_rate * e + (1 - ema_rate) * n, ema, new)
 
@@ -132,7 +167,9 @@ def main():
         wall_maps, agent_pos, goal_pos, agent_dirs = jax.vmap(decode_level)(thetas)
         return wall_maps, agent_pos, goal_pos
 
-    def evaluate(params, rng):
+    def evaluate(replicated_params, rng):
+        # Run sampling on a single device using the unreplicated copy.
+        params = jax_utils.unreplicate(replicated_params)
         t0 = time.time()
         wall_maps, agent_pos, goal_pos = sample_and_decode(params, rng)
         wm = np.array(wall_maps)
@@ -159,10 +196,13 @@ def main():
 
     for step in range(start_step, args.total_steps):
         rng, rng_batch, rng_train = jax.random.split(rng, 3)
-        batch = gen_batch(rng_batch)
-        state, loss = train_step(state, batch, rng_train)
+        rng_batch_d = jax.random.split(rng_batch, n_devices)
+        rng_train_d = jax.random.split(rng_train, n_devices)
+        batch = gen_batch(rng_batch_d)
+        state, loss = train_step(state, batch, rng_train_d)
         ema_params = update_ema(ema_params, state.params)
-        losses.append(float(loss))
+        # `loss` is shape (n_devices,) with identical values across devices (pmean).
+        losses.append(float(loss[0]))
 
         if (step + 1) % args.log_every == 0:
             avg_loss = np.mean(losses[-args.log_every :])
@@ -188,11 +228,11 @@ def main():
 
         if (step + 1) % args.save_every == 0:
             path = os.path.join(args.ckpt_dir, f"step_{step+1:07d}.pkl")
-            save_checkpoint(path, state, ema_params, step + 1)
+            save_checkpoint(path, state, ema_params, step + 1, unet_kwargs)
             print(f"  saved {path}")
 
     path = os.path.join(args.ckpt_dir, "final.pkl")
-    save_checkpoint(path, state, ema_params, args.total_steps)
+    save_checkpoint(path, state, ema_params, args.total_steps, unet_kwargs)
     total_time = time.time() - t0
     print(f"Training complete in {total_time/3600:.1f}h. Saved {path}")
 
