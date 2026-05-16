@@ -26,11 +26,11 @@ from minimax.add.runner import ADDRunner
 
 
 EVAL_ENV_NAMES = [
+    "Maze-FourRooms",
     "Maze-SixteenRooms",
     "Maze-SixteenRooms2",
     "Maze-Labyrinth",
     "Maze-Labyrinth2",
-    "Maze-LabyrinthFlipped",
     "Maze-StandardMaze",
     "Maze-StandardMaze2",
     "Maze-StandardMaze3",
@@ -83,7 +83,7 @@ def make_runner(args):
         lr=args.lr,
         discount=args.discount,
         gae_lambda=args.gae_lambda,
-        track_env_metrics=False,
+        track_env_metrics=True,
     )
 
     if args.runner == "add":
@@ -215,6 +215,18 @@ def main():
                 print(f"  eval | mean solved {mean_solved:.1%}")
                 for name, rate in sorted(solved_rates.items()):
                     print(f"    {name}: {rate:.1%}")
+
+            walls = stats.get("env/n_walls")
+            path = stats.get("env/shortest_path_length")
+            passable = stats.get("env/passable_ratio")
+            if walls is not None and path is not None and passable is not None:
+                p_frac = float(passable)
+                walls_str = f"{float(walls):.1f}" if p_frac > 0 else "n/a"
+                path_str = f"{float(path):.1f}" if p_frac > 0 else "n/a"
+                print(
+                    f"  complexity | walls {walls_str} | path {path_str} | "
+                    f"passable {p_frac:.1%} (means over passable levels)"
+                )
 
         if tick % args.ckpt_every == 0 or tick == args.n_updates:
             ckpt_path = os.path.join(ckpt_dir, f"step_{tick:06d}.pkl")
