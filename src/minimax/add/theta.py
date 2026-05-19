@@ -98,8 +98,15 @@ def decode_level(
 
 def sample_random_level(
     rng: jnp.ndarray,
+    min_walls: int = 0,
+    max_walls: int = 60,
 ) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     """Sample a random maze level matching the paper's distribution.
+
+    Wall count is drawn uniformly from [min_walls, max_walls) (exclusive upper,
+    matching `jax.random.randint`). Default `(0, 60)` reproduces the ADD paper.
+
+    `max_walls` must be a static Python int (it sets array shapes).
 
     Returns (wall_map, agent_pos, goal_pos, agent_dir) in inner coords.
     """
@@ -109,9 +116,9 @@ def sample_random_level(
     # No explicit border — border is painted in the 16x16 padding by encode_level.
     grid_size_sq = GRID_SIZE * GRID_SIZE  # 169
 
-    n_walls = jax.random.randint(rng_nwalls, (), 0, 60)
-    wall_indices = jax.random.randint(rng_walls, (60,), 0, grid_size_sq)
-    mask = (jnp.arange(60) < n_walls).astype(jnp.int32)
+    n_walls = jax.random.randint(rng_nwalls, (), min_walls, max_walls)
+    wall_indices = jax.random.randint(rng_walls, (max_walls,), 0, grid_size_sq)
+    mask = (jnp.arange(max_walls) < n_walls).astype(jnp.int32)
 
     wall_flat = jnp.zeros(grid_size_sq, dtype=jnp.int32)
     wall_flat = wall_flat.at[wall_indices].add(mask)
@@ -140,7 +147,13 @@ def sample_random_level(
     return wall_map, agent_pos, goal_pos, agent_dir
 
 
-def sample_random_theta(rng: jnp.ndarray) -> jnp.ndarray:
-    """Sample a random level and encode it as a theta image. Vmappable."""
-    wall_map, agent_pos, goal_pos, agent_dir = sample_random_level(rng)
+def sample_random_theta(
+    rng: jnp.ndarray,
+    min_walls: int = 0,
+    max_walls: int = 60,
+) -> jnp.ndarray:
+    """Sample a random level and encode it as a theta image. Vmappable in `rng`."""
+    wall_map, agent_pos, goal_pos, agent_dir = sample_random_level(
+        rng, min_walls=min_walls, max_walls=max_walls,
+    )
     return encode_level(wall_map, agent_pos, goal_pos, agent_dir)

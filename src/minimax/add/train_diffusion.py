@@ -22,7 +22,7 @@ import optax
 from flax import jax_utils
 from flax.training import train_state
 
-from minimax.add.theta import sample_random_theta, decode_level
+from minimax.add.theta import GRID_SIZE, sample_random_theta, decode_level
 from minimax.add.unet import UNet
 from minimax.add.diffusion import make_schedule, compute_loss, ddim_sample_theta
 
@@ -44,7 +44,7 @@ def has_path_bfs(wall_map_np, start, goal):
     return False
 
 
-def save_checkpoint(path, state, ema_params, step, unet_kwargs):
+def save_checkpoint(path, state, ema_params, step, unet_kwargs, data_kwargs):
     """Unreplicate-then-pickle. `state` and `ema_params` are device-replicated."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     state_host = jax_utils.unreplicate(state)
@@ -55,6 +55,7 @@ def save_checkpoint(path, state, ema_params, step, unet_kwargs):
         "opt_state": jax.device_get(state_host.opt_state),
         "step": step,
         "unet_kwargs": unet_kwargs,
+        "data_kwargs": data_kwargs,
     }
     with open(path, "wb") as f:
         pickle.dump(data, f)
@@ -93,7 +94,18 @@ def main():
     parser.add_argument("--num_heads", type=int, default=None,
                         help="Fix UNet attention head count (matches PyTorch reference, =4). "
                              "Default None preserves legacy max(1, channels // 64).")
+    parser.add_argument("--min_walls", type=int, default=0,
+                        help="Lower bound (inclusive) of uniform wall-count sampling.")
+    parser.add_argument("--max_walls", type=int, default=60,
+                        help="Upper bound (exclusive) of uniform wall-count sampling. "
+                             "Default 60 matches the ADD paper. Wall indices are sampled "
+                             "with replacement, so realised wall counts are coupon-collector "
+                             "skewed below the nominal n_walls draw, especially near 169.")
     args = parser.parse_args()
+    if not 0 <= args.min_walls < args.max_walls <= GRID_SIZE * GRID_SIZE:
+        raise ValueError(
+            f"need 0 <= min_walls ({args.min_walls}) < max_walls ({args.max_walls}) <= 169"
+        )
 
     n_devices = jax.local_device_count()
     if args.batch_size % n_devices != 0:
@@ -111,6 +123,14 @@ def main():
         unet_kwargs["num_heads"] = args.num_heads
     print(f"UNet kwargs (non-default): {unet_kwargs}")
     model = UNet(**unet_kwargs)
+
+    data_kwargs = {"min_walls": args.min_walls, "max_walls": args.max_walls}
+    print(f"Data kwargs: {data_kwargs}")
+    sample_theta_fn = partial(
+        sample_random_theta,
+        min_walls=args.min_walls,
+        max_walls=args.max_walls,
+    )
 
     rng, init_rng = jax.random.split(rng)
     params = model.init(init_rng, jnp.ones((1, 16, 16, 3)), jnp.array([0]))
@@ -148,7 +168,7 @@ def main():
     @jax.pmap
     def gen_batch(rng):
         # rng shape (n_devices, 2). Per-device: split → vmap.
-        return jax.vmap(sample_random_theta)(jax.random.split(rng, per_device_batch))
+        return jax.vmap(sample_theta_fn)(jax.random.split(rng, per_device_batch))
 
     ema_rate = args.ema_rate
 
@@ -228,11 +248,11 @@ def main():
 
         if (step + 1) % args.save_every == 0:
             path = os.path.join(args.ckpt_dir, f"step_{step+1:07d}.pkl")
-            save_checkpoint(path, state, ema_params, step + 1, unet_kwargs)
+            save_checkpoint(path, state, ema_params, step + 1, unet_kwargs, data_kwargs)
             print(f"  saved {path}")
 
     path = os.path.join(args.ckpt_dir, "final.pkl")
-    save_checkpoint(path, state, ema_params, args.total_steps, unet_kwargs)
+    save_checkpoint(path, state, ema_params, args.total_steps, unet_kwargs, data_kwargs)
     total_time = time.time() - t0
     print(f"Training complete in {total_time/3600:.1f}h. Saved {path}")
 
